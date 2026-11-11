@@ -1,6 +1,6 @@
 # eukhe-site
 
-eukhe.com: the page for [Eukhe](https://github.com/gildrb/eukhe), the harness for the AGI era, set as visible Markdown in Ioskeley Mono, in gildrb.com's colors. Preact, StyleX, strict TypeScript, Vite+, a Cloudflare Worker.
+eukhe.com: the page for [Eukhe](https://github.com/gildrb/eukhe), the harness for the AGI era, set as visible Markdown in Paper Mono, in gildrb.com's colors. Preact, StyleX, strict TypeScript, Vite+, a Cloudflare Worker.
 
 ## Install
 
