@@ -97,6 +97,8 @@ function keyName(event: KeyboardEvent): string | null {
   if (event.ctrlKey) {
     if (event.key === "[") return "<Esc>";
     if (event.key === "^" || event.key === "6") return "<C-^>";
+    // Ctrl with +, - or 0 is the browser's zoom (Linux, Windows): the cells grow or shrink with it.
+    if (["=", "+", "-", "0"].includes(event.key)) return null;
     return event.key.length === 1 ? `<C-${event.key.toLowerCase()}>` : null;
   }
   switch (event.key) {
@@ -579,6 +581,9 @@ function listen() {
   let wheelX = 0;
   let wheelLast = Number.NEGATIVE_INFINITY;
   let wheelOwner: "page" | "browser" = "page";
+  // A trackpad pinch, or Ctrl with the wheel (a wheel event with ctrlKey): the font at its start,
+  // the font's line ratio, and the wheel summed since.
+  let wheelZoom: { font: number; leading: number; dy: number } | null = null;
   term.addEventListener(
     "wheel",
     (event) => {
@@ -586,11 +591,23 @@ function listen() {
       const dx = event.deltaX * unit;
       const dy = event.deltaY * unit;
       const sideways = Math.abs(dx) > Math.abs(dy);
-      if (event.timeStamp - wheelLast > 150) {
+      const fresh = event.timeStamp - wheelLast > 150;
+      wheelLast = event.timeStamp;
+      if (event.ctrlKey) {
+        // Sizes the font, as two fingers do on a phone.
+        event.preventDefault();
+        if (fresh || wheelZoom === null) {
+          const font = Number.parseFloat(getComputedStyle(term).getPropertyValue("--fs"));
+          wheelZoom = { font, leading: lh / font, dy: 0 };
+        }
+        wheelZoom = { ...wheelZoom, dy: wheelZoom.dy + dy };
+        zoom(wheelZoom.font * Math.exp(-wheelZoom.dy / 200), wheelZoom.leading);
+        return;
+      }
+      if (fresh) {
         const atLeft = shown === null || shown.left === 0;
         wheelOwner = atLeft && dx < 0 && -dx >= Math.abs(dy) ? "browser" : "page";
       }
-      wheelLast = event.timeStamp;
       if (wheelOwner === "browser") return;
       event.preventDefault();
       if (sideways) {
