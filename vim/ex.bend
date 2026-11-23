@@ -12,10 +12,6 @@ import ./find.bend as F
 import ./st.bend as S
 import ./core.bend as C
 
-# the install command: the one line yy copies
-def Vim.install() -> String:
-  "curl -fsSL https://eukhe.com/install | sh"
-
 # Messages
 # --------
 
@@ -62,7 +58,7 @@ def Search.say(f: T.Find, +back: Bool) -> String:
 
 def Search.land(+s: T.St, +f: T.Find, +back: Bool, found: F.Found) -> T.St:
   match found:
-    case F.Lost{}:
+    case F.NoHit{}:
       Msg.say(s, "E486: Pattern not found: " ++ Search.text(f))
     case F.Found{+p, +wrapped}:
       +s2 = C.Win.go(C.Win.jump(s), p, False{})

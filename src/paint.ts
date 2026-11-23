@@ -5,7 +5,7 @@
  * the one the browser would paint, on any screen.
  */
 import type { EditorFile } from "./markdown.tsx";
-import type { BendList, Frame, Mark } from "./vim.mjs";
+import type { BendList, Frame, Mark, Span } from "./vim.mjs";
 
 export function list<T>(items: BendList<T>): T[] {
   const out: T[] = [];
@@ -101,7 +101,7 @@ const greekLetter = /[\u0370-\u03FF\u1F00-\u1FFF]/u;
 const latinLetter = /[A-Za-z\u00C0-\u024F]/u;
 
 /**
- * A line of Ancient Greek (an epigraph, the header's numerals): Greek letters and no Latin ones.
+ * A line of Ancient Greek (an epigraph): Greek letters and no Latin ones.
  * The page and the editor mark it `lang="grc" translate="no"`, so a browser neither takes the
  * page for Greek nor offers to translate it.
  */
@@ -140,23 +140,25 @@ function rowHtml(row: Row): string {
   return greekLine(text) ? `<span lang="grc" translate="no">${html}</span>` : html;
 }
 
-/** `[copy]` on screen: its row and cells, and what it copies. */
-export type CopyAt = { row: number; from: number; to: number; text: string };
+/** `[copy]` on screen: its row and cells, what it copies, and the line that command is on. */
+export type CopyAt = { row: number; from: number; to: number; text: string; at: number };
 
 /**
  * The h text rows: the window's lines from `left`, with highlights, search hits and virtual text
- * (`[copy]` after the install fence). `dir` holds an Oil listing's lines.
+ * (`[copy]` after each code block's opening line). `dir` holds an Oil listing's lines.
  */
 export function textRows(
   frame: Frame,
   file: EditorFile | undefined,
   dir: readonly string[],
   h: number,
-): { htmls: string[]; copyAt: CopyAt | null } {
+  flash: readonly Span[] = [],
+): { htmls: string[]; copyAt: CopyAt[] } {
   const hits = list(frame.hits);
+  const sel = list(frame.sel);
   const g = frame.gutter;
   const left = frame.left;
-  let copyAt: CopyAt | null = null;
+  const copyAt: CopyAt[] = [];
   const htmls: string[] = [];
   for (let r = 0; r < h; r += 1) {
     const l = frame.top + r;
@@ -165,22 +167,19 @@ export function textRows(
       const line = file.lines[l];
       if (line !== undefined) {
         const cps = cells(line);
-        const command = file.lines[l + 1];
-        const copy = file.copy === l && command !== undefined;
-        row = blankRow(Math.max(0, cps.length + (copy ? 8 : 0) - left));
+        const copy = file.copies.find((c) => c.line === l);
+        row = blankRow(Math.max(0, cps.length + (copy !== undefined ? 8 : 0) - left));
         for (let c = 0; c < row.chars.length; c += 1) {
           const ch = cps[left + c];
           if (ch === undefined) break;
           row.chars[c] = ch;
         }
         for (const run of file.runs[l] ?? []) addClass(row, run.from - left, run.to - left, run.hl);
-        if (copy) {
+        if (copy !== undefined) {
           const at = cps.length + 2 - left;
           if (at >= 0) {
             put(row, at, "[copy]", "copy");
-            // The command alone, its trailing `# comment` dropped.
-            const text = command.replace(/(^|\s)#\s.*$/, "").trimEnd();
-            copyAt = { row: r, from: g + at, to: g + at + 6, text };
+            copyAt.push({ row: r, from: g + at, to: g + at + 6, text: copy.text, at: copy.at });
           }
         }
       }
@@ -192,7 +191,12 @@ export function textRows(
       }
     }
     const mine = hits.filter((hit) => hit.row === r);
-    const hitEnd = Math.max(0, ...mine.map((hit) => hit.col - g + hit.len));
+    const picked = sel.filter((span) => span.row === r);
+    const flashed = flash.filter((span) => span.row === r);
+    const hitEnd = Math.max(
+      0,
+      ...[...mine, ...picked, ...flashed].map((hit) => hit.col - g + hit.len),
+    );
     if (hitEnd > row.chars.length) {
       const wider = blankRow(hitEnd);
       row.chars.forEach((ch, c) => {
@@ -202,6 +206,8 @@ export function textRows(
       row = wider;
     }
     for (const hit of mine) addClass(row, hit.col - g, hit.col - g + hit.len, "hit");
+    for (const span of picked) addClass(row, span.col - left, span.col - left + span.len, "vis");
+    for (const span of flashed) addClass(row, span.col - left, span.col - left + span.len, "yank");
     htmls.push(rowHtml(row));
   }
   return { htmls, copyAt };

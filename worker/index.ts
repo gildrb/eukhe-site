@@ -6,15 +6,15 @@
 type Env = { ASSETS: Fetcher };
 
 const apex = "eukhe.com";
-const installer = "https://github.com/gildrb/eukhe/releases/latest/download/install.sh";
+/** The installer, `public/install.sh`. */
+const installer = "/install.sh";
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.hostname === `www.${apex}`)
       return Response.redirect(`https://${apex}${url.pathname}${url.search}`, 301);
-    if (url.pathname === "/install")
-      return new Response(null, { status: 302, headers: { Location: installer } });
+    if (url.pathname === "/install") return script(env.ASSETS.fetch(new URL(installer, url)));
     if (url.pathname === "/") {
       // A browser asks for HTML, an agent for Markdown, `curl` and `wget` for anything.
       const accept = request.headers.get("Accept") ?? "";
@@ -24,10 +24,7 @@ export default {
       // `Accept: */*` get the page, as a browser does.
       const agent = request.headers.get("User-Agent") ?? "";
       if (!accept.includes("text/html") && /^(curl|wget)\//i.test(agent))
-        return new Response(null, {
-          status: 302,
-          headers: { Location: installer, Vary: "Accept, User-Agent" },
-        });
+        return script(env.ASSETS.fetch(new URL(installer, url)), "Accept, User-Agent");
     }
     if ((request.headers.get("Accept") ?? "").includes("text/markdown")) {
       const twin = await env.ASSETS.fetch(new URL(`${url.pathname.replace(/\/$/, "")}.md`, url));
@@ -49,6 +46,15 @@ function text(response: Response): Response {
   const headers = new Headers(response.headers);
   headers.set("Content-Type", "text/plain; charset=utf-8");
   return new Response(response.body, { status: response.status, headers });
+}
+
+/** The installer as text, so a browser shows it and `sh` reads it. */
+async function script(response: Promise<Response>, vary?: string): Promise<Response> {
+  const file = await response;
+  const headers = new Headers(file.headers);
+  headers.set("Content-Type", "text/plain; charset=utf-8");
+  if (vary !== undefined) headers.set("Vary", vary);
+  return new Response(file.body, { status: file.status, headers });
 }
 
 async function markdown(response: Promise<Response>, status?: number): Promise<Response> {

@@ -1,6 +1,6 @@
 # Proofs of the laws (LAWS.bend, laws/vim/)
 
-All 37 laws of laws/vim/ are proven: `bend PROOF.bend` and
+Every law of laws/vim/ is proven: `bend PROOF.bend` and
 `bend PROOF.bend --verdict` print ALL PROOFS CHECK. No law is open.
 
 `bend PROOF.bend` (and `--verdict`) checks every file PROOF.bend imports.
@@ -111,12 +111,40 @@ proof/vim/screen/*.bend, from `Final.of` and screen/base.bend, parts.bend, frame
   (`proof/vim/host/act.bend`): `Host.good(fs, act(Vim.step(run, e)))`, i.e.
   honest and url_ok together, by `Step.good` → `In.good` (every key path
   of Key.in; `Normal.good`/`Hi.good`/`G.good` enumerate key numbers).
-  yy: copies `E.Vim.install()` itself, which computes to `Spec.install()`.
+  yy, Y and y in visual mode: `Copy.good` (only on file windows): the text
+  is `Vis.cut` of the file's text (`Vis.join` = `Spec.text`, `Join.spec`), a
+  run of it (`Cut.sub`: `Take.sub`, `Drop.sub`), so `Spec.in_text` holds
+  (`Sel.in`, `In.text_file`). Visual mode's other keys run normal mode's
+  (`Visual.at`, `Revisual.act`).
   gx: `Gx.good` (only on file windows: Link.gx tests `C.St.on_file`).
 - `proof/vim/host/base.bend`: string lemmas (`Str.app_nil/assoc/rev_go/
   rev_app/rev_rev`), runs `Sub(u, s)` (s = a ++ u ++ b; `refl/trans/rev/
   cons/within`), `When.both`/`Pick.both` (a property of both branches),
   and `Gx.sub(line, c)`: the target gx cuts is a run of the line.
+
+### visual (yank_line, yank_char, yank_either_way, vis_label, v_v, V_v, v_V, V_V, v_j, v_minus, sel_cells)
+
+- `proof/vim/visual/yank_line.bend`: on Idle.mk of the editor, Y on file i
+  computes to `Key.copy` of one line; `Line.text`: the cut from where the
+  line starts (`Join.drop`, `Off.succ`, `Drop.at`) for its length and break
+  (`Take.app`, `Take.nl`) is the line and its break.
+- `proof/vim/visual/yank_char.bend`: `Settle.vis` (Settle.self in visual
+  mode: Vim.final keeps the window v leaves); `Char.text`: the cut at the
+  cursor of length one (`Drop.add`, `One.of`, `Char.cut`) is the character
+  there, or the line break on an empty line.
+- `proof/vim/visual/either.bend`: `Text.sym`: the selection's ends ordered
+  by `Vis.lo` and `Vis.hi` are the same pair either way round.
+- `proof/vim/visual/modes.bend`: `Label.text` (the name cut to 17 columns or
+  more is whole); v v, V v, v V and V V by computation; v j as a chain of small
+  equations (`VJ.vpress`, `VJ.state`, `PV.e1`..`PV.e4`, `Cmd.vis`): each one
+  its own def, so `--verdict` never unfolds a whole keypress at once.
+- `proof/vim/visual/leave.bend`: v then -: Oil's folder (`Oil.here_file`) is
+  not the file, so `Revis.leave` drops visual mode and `Leave.nosel` holds.
+- `proof/vim/visual/cells.bend`: `Go.cov` (row d of the runs is line top + d),
+  `Run.cov`, `Cols.in` (`Cols.chars` through `Tri`, `Bef0` for V), `Sel.in`;
+  `Vf.line` and `Vf.col` read the cursor back from the frame.
+- Visual mode in the frame laws: `Mode.text` (normal and visual mode show the
+  cursor in the text), so `OnText.at` and `Scrolled.at` cover both.
 
 ### Ex (colon, ex_line)
 

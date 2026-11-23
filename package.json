@@ -3,13 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vp dev",
-    "build": "npm run eukhe -- --check && npm run bend && vp build",
-    "check": "vp check",
-    "deploy": "npm run build && npx wrangler deploy",
-    "prepare": "vp config",
-    "bend": "bend vim/vim.bend -o src/vim.mjs",
-    "eukhe": "node scripts/eukhe.ts"
+    "eukhe": "sh scripts/eukhe.sh",
+    "build": "vp run eukhe && vp run bend && vp build",
+    "laws": "vp run eukhe && python3 scripts/laws.py",
+    "deploy": "vp run build && vp exec wrangler deploy",
+    "bend": "bend=\"$(python3 .eukhe/.github/scripts/pinned_bend.py)\" && \"$bend\" vim/vim.bend -o src/vim.mjs"
   },
   "dependencies": {
     "@stylexjs/stylex": "^0.19.1",
@@ -20,20 +18,14 @@
     "@stylexjs/unplugin": "^0.19.1",
     "@types/node": "^26.6.2",
     "preact-render-to-string": "^6.7.0",
-    "vite": "npm:@voidzero-dev/vite-plus-core@1.4.0",
-    "vite-plus": "1.4.0"
+    "vite": "npm:@voidzero-dev/vite-plus-core@8.3.8000",
+    "vite-plus": "1.7.0",
+    "wrangler": "4.166.0"
   },
   "overrides": {
-    "vite": "npm:@voidzero-dev/vite-plus-core@1.4.0"
+    "vite": "npm:@voidzero-dev/vite-plus-core@8.3.8000"
   },
   "browserslist": [
     "baseline widely available"
-  ],
-  "devEngines": {
-    "packageManager": {
-      "name": "npm",
-      "version": "11.19.1",
-      "onFail": "download"
-    }
-  }
+  ]
 }

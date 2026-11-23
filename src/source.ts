@@ -1,6 +1,10 @@
-import { epigraphs } from "./epigraphs.ts";
-import head from "./content/head.md?raw";
-import readme from "./content/eukhe/README.md?raw";
+import { epigraphs, titleEpigraph } from "./epigraphs.ts";
+import { repository } from "./rendered.ts";
+
+/** The source's line: under the title and at the page's end. */
+const sourceLine = `Source: [${repository}](${repository})`;
+// Eukhe's README, from its checkout (`.eukhe/`, `scripts/eukhe.sh`).
+import readme from "../.eukhe/README.md?raw";
 
 /**
  * The install command: the one block with a `[copy]` button. Other commands (`cd /path/to/project`)
@@ -11,37 +15,79 @@ export const install = "curl -fsSL https://eukhe.com/install | sh";
 if (!readme.split("\n").some((line) => line.split(/\s+#\s/)[0]?.trimEnd() === install))
   throw new Error("README.md lacks the install command");
 
-/** The README, each epigraph's quote under its heading; the README's own lines stay as they are. */
+/**
+ * The line of the README's first level-1 heading (`# `, outside code blocks), its name whatever its
+ * text; -1 if it has none.
+ */
+function titleLine(lines: readonly string[]): number {
+  let fenced = false;
+  return lines.findIndex((line) => {
+    if (line.startsWith("```")) fenced = !fenced;
+    return !fenced && line.startsWith("# ");
+  });
+}
+
+/** The README's definition: the first sentence of the first paragraph under its title. */
+function definitionOf(lines: readonly string[]): string {
+  const title = titleLine(lines);
+  if (title === -1) throw new Error("README.md has no `# ` heading");
+  const rest = lines.slice(title + 1);
+  const start = rest.findIndex((line) => line.trim() !== "");
+  if (start === -1) throw new Error("README.md has no paragraph under its title");
+  const after = rest.slice(start);
+  const end = after.findIndex((line) => line.trim() === "");
+  const paragraph = (end === -1 ? after : after.slice(0, end)).map((l) => l.trim()).join(" ");
+  const sentence = /^.+?\.(?=\s|$)/.exec(paragraph)?.[0];
+  if (sentence === undefined) throw new Error("README.md's first paragraph has no sentence");
+  return sentence;
+}
+
+export const definition = definitionOf(readme.split("\n"));
+
+/**
+ * The README, each epigraph's quote under its heading; the README's own lines stay as they are. The
+ * title epigraph goes under the README's first level-1 heading, whatever its text; any other
+ * epigraph whose heading the README does not hold exactly once is left out, and the build names it.
+ */
 function withEpigraphs(markdown: string): string {
   const lines = markdown.split("\n");
-  for (const heading of epigraphs.keys())
-    if (lines.filter((line) => line === heading).length !== 1)
-      throw new Error(`README.md has no single "${heading}" line for its epigraph`);
+  const title = titleLine(lines);
+  if (title === -1) console.warn("README.md has no `# ` heading: the title epigraph is left out");
+  const placed = new Map(
+    [...epigraphs].filter(([heading]) => {
+      const once = lines.filter((line) => line === heading).length === 1;
+      if (!once)
+        console.warn(`README.md has no single "${heading}" line: its epigraph is left out`);
+      return once;
+    }),
+  );
   return lines
-    .flatMap((line) => {
-      const quote = epigraphs.get(line);
+    .flatMap((line, index) => {
+      // Under the title, where a reader looks first: the source, then the title's epigraph.
+      if (index === title)
+        return [line, "", sourceLine, "", ...titleEpigraph.map((text) => `> ${text}`)];
+      const quote = placed.get(line);
       return quote === undefined ? [line] : [line, "", ...quote.map((text) => `> ${text}`)];
     })
     .join("\n");
 }
 
-/** Where eukhe's source lives: the page's last line, after the README. */
-const repository = "https://github.com/gildrb/eukhe";
-
 /**
- * The whole page as Markdown: what the page shows, and what `Accept: text/markdown` gets. The
- * site's header, then eukhe's README (`scripts/eukhe.ts` keeps the copy equal to it) with the
+ * The whole page as Markdown: what the page shows, and what `Accept: text/markdown` gets. Eukhe's
+ * README (its `README.md`, read at build time from `.eukhe/`) from its own first line, with the
  * site's epigraphs, then the source.
  */
-export const source = `${head.trimEnd()}\n\n${withEpigraphs(readme).trimEnd()}\n\nSource: [${repository}](${repository})\n`;
+export const source = `${withEpigraphs(readme).trimEnd()}\n\n${sourceLine}\n`;
 
-export const notFound = `EUKHE
-404: NO PAGE HERE
-2026
+export const notFound = `# Eukhe
 
-~*~ εὐχή: a wish, a prayer ~*~
+No page is at this address.
 
-# NOT FOUND
-
-Back to [eukhe.com](/).
+<a href="https://gildrb.com"><pre>
+        _ __   __    __
+  ___ _(_) /__/ /___/ /   _______  __ _
+ / _ \`/ / / _  / __/ _ \\_/ __/ _ \\/  ' \\
+ \\_, /_/_/\\_,_/_/ /_.__(_)__/\\___/_/_/_/
+/___/
+</pre></a>
 `;

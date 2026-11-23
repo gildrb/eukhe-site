@@ -1,9 +1,10 @@
 .DS_Store
-AGENTS.md
 node_modules/
 dist/
 .wrangler/
-# Bend's JS output: `npm run bend` writes it from vim/vim.bend.
+# Eukhe's checkout: `vp run eukhe` (scripts/eukhe.sh) fetches it.
+.eukhe/
+# Bend's JS output: `vp run bend` writes it from vim/vim.bend.
 src/vim.mjs
 
 .env

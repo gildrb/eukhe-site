@@ -1,4 +1,5 @@
-// Deploy: `npm run deploy` (builds `dist/`, then `wrangler deploy`).
+// Deploy: `vp run deploy` (fetches eukhe's main, builds `dist/`, then `wrangler deploy`); only by
+// hand, never on a push.
 // eukhe.gildrb.com stays on gildrb.com's gildrb-products Worker and redirects here.
 {
   "name": "eukhe-site",

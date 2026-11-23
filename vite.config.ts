@@ -3,7 +3,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import stylexVite from "@stylexjs/unplugin/vite";
 import { defineConfig, type Plugin } from "vite-plus";
-import { gather } from "./scripts/files.ts";
+import { gather, images, servedPath, shown } from "./scripts/files.ts";
 import type * as RenderModule from "./src/render.tsx";
 
 type Render = typeof RenderModule;
@@ -40,8 +40,12 @@ const stylexPlugin: Plugin & { __stylexCollectCss?: () => string } = stylexVite(
 const site: Plugin = {
   name: "site",
   configureServer(server) {
+    // Vite watches src/ and Eukhe's checkout (`.eukhe/`, whose README the pages import); the
+    // README's linked files are read again on every request.
     server.watcher.on("change", (file) => {
-      if (file.includes(`${path.sep}src${path.sep}`)) server.ws.send({ type: "full-reload" });
+      const local = path.relative(root, file);
+      if (local.startsWith(`.eukhe${path.sep}`) || local.startsWith(`src${path.sep}`))
+        server.ws.send({ type: "full-reload" });
     });
     server.middlewares.use((request, response, next) => {
       const { pathname } = new URL(request.url ?? "/", "http://localhost");
@@ -49,12 +53,24 @@ const site: Plugin = {
         .ssrLoadModule("/src/render.tsx")
         .then(async (module) => {
           const css = stylexPlugin.__stylexCollectCss?.() ?? "";
-          const files = renderModule(module).render(css, "/src/client.ts", await gather(root));
+          const read = await images(root);
+          const files = renderModule(module).render(
+            css,
+            "/src/client.ts",
+            await gather(root),
+            shown(read),
+          );
           const name = pathname.endsWith("/")
             ? `${pathname.slice(1)}index.html`
             : pathname.slice(1);
           const body = files[name];
-          if (body === undefined) return next();
+          if (body === undefined) {
+            // The README's images, read again on every request, as its linked files are.
+            const image = read.find((file) => servedPath(file) === name);
+            if (image === undefined) return next();
+            response.setHeader("Content-Type", contentType(name));
+            return response.end(image.bytes);
+          }
           const html = name.endsWith(".html");
           response.setHeader("Content-Type", html ? "text/html" : contentType(name));
           response.end(html ? await server.transformIndexHtml(pathname, body) : body);
@@ -66,6 +82,9 @@ const site: Plugin = {
 
 function contentType(name: string): string {
   if (name.endsWith(".svg")) return "image/svg+xml";
+  if (name.endsWith(".gif")) return "image/gif";
+  if (name.endsWith(".png")) return "image/png";
+  if (name.endsWith(".webp")) return "image/webp";
   if (name.endsWith(".xml")) return "application/xml";
   if (name.endsWith(".md")) return "text/markdown; charset=utf-8";
   return "text/plain; charset=utf-8";
@@ -73,9 +92,9 @@ function contentType(name: string): string {
 
 export default defineConfig({
   staged: { "*": "vp check --fix" },
-  fmt: { ignorePatterns: ["src/content/**", "public/**", "src/vim.mjs"] },
+  fmt: { ignorePatterns: [".eukhe/**", "src/content/**", "public/**", "src/vim.mjs"] },
   lint: {
-    ignorePatterns: ["public/**", "src/vim.mjs"],
+    ignorePatterns: [".eukhe/**", "public/**", "src/vim.mjs"],
     plugins: ["typescript", "unicorn", "oxc", "import"],
     jsPlugins: [{ name: "vite-plus", specifier: "vite-plus/oxlint-plugin" }],
     categories: { correctness: "error", suspicious: "error" },
@@ -130,13 +149,20 @@ export default defineConfig({
       const outDir = "dist";
       // The pages inline the CSS; the client pass's copy of it is unused.
       await rm(path.join(outDir, "assets/stylex.css"), { force: true });
+      const read = await images(root);
+      const pages = render(css, `/${entry.fileName}`, await gather(root), shown(read));
+      const taken = read.map(servedPath).filter((file) => file in pages);
+      if (taken.length > 0)
+        throw new Error(`README images clash with the site's files: ${taken.join(", ")}`);
+      const out: [string, string | Buffer][] = [
+        ...Object.entries(pages),
+        ...read.map((image): [string, Buffer] => [servedPath(image), image.bytes]),
+      ];
       await Promise.all(
-        Object.entries(render(css, `/${entry.fileName}`, await gather(root))).map(
-          async ([file, body]) => {
-            await mkdir(path.dirname(path.join(outDir, file)), { recursive: true });
-            await writeFile(path.join(outDir, file), body);
-          },
-        ),
+        out.map(async ([file, body]) => {
+          await mkdir(path.dirname(path.join(outDir, file)), { recursive: true });
+          await writeFile(path.join(outDir, file), body);
+        }),
       );
     },
   },

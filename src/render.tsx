@@ -5,24 +5,25 @@ import { escape, gutterRows, statusParts, textRows } from "./paint.ts";
 import about from "./content/about.md?raw";
 import contact from "./content/contact.md?raw";
 import privacy from "./content/privacy.md?raw";
-import { install, notFound, source } from "./source.ts";
+import { desktop, imagesHtml, pageFile, type Shown, textWidth } from "./rendered.ts";
+import { definition, install, notFound, source } from "./source.ts";
 import { colors, palette, type } from "./tokens.stylex.ts";
 import Vim, { type BendList, type Buf } from "./vim.mjs";
 
 export const origin = "https://eukhe.com";
 
 const name = "Eukhe";
-const summary =
-  "The harness for the AGI era. You wish how the agent should do the work, and Eukhe gets it done that way";
-const author = { name: "Gil Rodrigues", url: "https://gildrb.com", email: "mail@gildrb.com" };
+/** The title a shared link to the home page shows. */
+const sharedTitle = "Eukhe Harness";
+const author = { name: "Gil Rodrigues", url: "https://gildrb.com", email: "g@gildrb.com" };
 
 /** A page of the site: where it is, its title and description, and its Markdown. */
 type Doc = { path: string; title: string; description: string; markdown: string };
 
 const home: Doc = {
   path: "/",
-  title: "Eukhe: the harness for the AGI era",
-  description: `${summary}. ${install}`,
+  title: "index.md | Eukhe",
+  description: definition,
   markdown: source,
 };
 
@@ -30,19 +31,19 @@ const home: Doc = {
 const docs: readonly Doc[] = [
   {
     path: "/about",
-    title: "About | Eukhe",
+    title: "about.md | Eukhe",
     description: "What Eukhe is, what is proven today and what is planned, and who makes it.",
     markdown: about,
   },
   {
     path: "/contact",
-    title: "Contact | Eukhe",
+    title: "contact.md | Eukhe",
     description: "How to reach Eukhe's author and report a bug or a security problem.",
     markdown: contact,
   },
   {
     path: "/privacy",
-    title: "Privacy | Eukhe",
+    title: "privacy.md | Eukhe",
     description: "What eukhe.com and the Eukhe program store and send.",
     markdown: privacy,
   },
@@ -50,7 +51,7 @@ const docs: readonly Doc[] = [
 
 const missing: Doc = {
   path: "/404",
-  title: "Not found | Eukhe",
+  title: "404.md | Eukhe",
   description: "No page here.",
   markdown: notFound,
 };
@@ -64,14 +65,13 @@ const structured = JSON.stringify({
       "@id": `${origin}/#app`,
       name,
       url: `${origin}/`,
-      description: summary,
+      description: definition,
       applicationCategory: "DeveloperApplication",
       operatingSystem: "macOS, Linux",
       license: "https://opensource.org/licenses/MIT",
       offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
       installUrl: `${origin}/install`,
       sameAs: ["https://github.com/gildrb/eukhe"],
-      image: `${origin}/og.png`,
       author: { "@id": `${author.url}/#person` },
       publisher: { "@id": `${origin}/#org` },
     },
@@ -80,7 +80,6 @@ const structured = JSON.stringify({
       "@id": `${origin}/#org`,
       name,
       url: `${origin}/`,
-      logo: `${origin}/og.png`,
       founder: { "@id": `${author.url}/#person` },
       contactPoint: {
         "@type": "ContactPoint",
@@ -101,7 +100,7 @@ const structured = JSON.stringify({
 }).replaceAll("<", "\\u003c");
 
 /**
- * The faces: Paper Mono's release files as they are (scripts/fonts.sh), one per weight. Its
+ * The faces: Paper Mono's release files as they are (scripts/fonts.py), one per weight. Its
  * advance is 606/1000 em; `size-adjust` sets it to the grid's 0.6em cell (99.01%: a CSS scale, the
  * files stay unmodified). Paper Mono has no Greek: the epigraphs' Greek comes from the system's
  * monospace (the font-family stack, tokens.stylex.ts). `?v=` names the release.
@@ -137,17 +136,32 @@ const globalCss = [
   `.muted,.nr,.bd,.dim,.count{color:${colors.tertiary}}`,
   `.heading,.match{color:${colors.primary};font-weight:${type.bold}}`,
   `.link,.copy{text-decoration:underline;text-decoration-color:${colors.tertiary};text-underline-offset:3px}`,
+  // The README's images: in the page under their figure; in the editor in rows of their own, under
+  // the text layer.
+  `main img{display:block;margin:0 auto;max-width:100%;height:auto}`,
+  `[data-images]{position:absolute;top:var(--oy);left:calc(var(--ox) + var(--g) * var(--cw));right:0;height:calc(var(--H) - 2 * var(--lh));overflow:hidden;pointer-events:none}`,
+  `[data-images]>a{position:absolute;display:block;pointer-events:auto}`,
+  `[data-images] img{display:block;width:100%;height:auto}`,
+  `.bold{font-weight:${type.bold};color:${colors.primary}}`,
+  `.italic{font-style:italic}`,
+  `.code{color:${colors.primary}}`,
   `.copy{cursor:pointer}`,
   `.cl{background:color-mix(in oklch,${colors.primary} 6%,transparent)}`,
   `.hit{background:color-mix(in oklch,${colors.tertiary} 40%,transparent)}`,
   `.sel{background:color-mix(in oklch,${colors.primary} 14%,${colors.bg})}`,
   `.thumb{background:${colors.tertiary}}`,
+  // Visual mode's selection (Neovim's Visual group).
+  `.vis{background:color-mix(in oklch,${colors.primary} 22%,transparent)}`,
+  // What a yank took, for 150 ms (Neovim's vim.hl.on_yank with IncSearch).
+  `.yank{background:${colors.primary};color:${colors.bg}}`,
   // A character two cells wide (fff's prompt goose): drawn in a box of exactly two cells.
   `.w2{display:inline-block;width:calc(2 * var(--cw));overflow:hidden;vertical-align:top}`,
 ].join("");
 
-/** The favicon: the header's cursor, one block, in each theme's `primary`. */
-export const favicon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><style>rect{fill:${palette.primary.dark}}@media (prefers-color-scheme:light){rect{fill:${palette.primary.light}}}</style><rect x="9" y="4" width="14" height="24"/></svg>\n`;
+/** The favicon: a block in the Temple of Hephaestus's proportion (9 : 4), the full width of the canvas, in each theme's primary. */
+export const favicon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36"><style>rect{fill:${palette.primary.dark}}@media (prefers-color-scheme:light){rect{fill:${palette.primary.light}}}</style><rect y="10" width="36" height="16"/></svg>\n`;
+/** Where pages link the favicon: the version changes with it, so browsers drop the one they cached. */
+export const faviconHref = "/favicon.svg?v=3";
 
 /** The first screen, as client.ts would paint it on any screen (paint.ts). */
 type Screen = {
@@ -156,6 +170,7 @@ type Screen = {
   left: string;
   right: string;
   char: string;
+  images: string;
   vars: Record<string, number>;
 };
 
@@ -184,6 +199,7 @@ function firstScreen(files: readonly EditorFile[]): Screen {
     left,
     right,
     char: escape(frame.char),
+    images: page.page === null ? "" : imagesHtml(page.images, 0, 0, page.page.width),
     vars: {
       "--g": frame.gutter,
       "--crow": frame.cur.row,
@@ -213,11 +229,13 @@ function Page({
   doc,
   script,
   screen,
+  shown,
 }: {
   css: string;
   doc: Doc;
   script: string;
   screen: Screen | null;
+  shown: Shown;
 }) {
   const url = `${origin}${doc.path}`;
   const markdownUrl = doc.path === "/" ? "/index.md" : `${doc.path.replace(/\/$/, "")}.md`;
@@ -238,7 +256,7 @@ function Page({
         <meta name="description" content={doc.description} />
         <meta name="theme-color" media="(prefers-color-scheme: dark)" content={palette.bg.dark} />
         <meta name="theme-color" media="(prefers-color-scheme: light)" content={palette.bg.light} />
-        <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+        <link rel="icon" type="image/svg+xml" href={faviconHref} />
         {doc === missing ? null : <link rel="canonical" href={url} />}
         <link
           rel="alternate"
@@ -248,14 +266,10 @@ function Page({
         <link rel="alternate" type="text/plain" title="llms.txt" href="/llms.txt" />
         <meta property="og:type" content="website" />
         <meta property="og:site_name" content={name} />
-        <meta property="og:title" content={doc.title} />
+        <meta property="og:title" content={doc === home ? sharedTitle : doc.title} />
         <meta property="og:description" content={doc.description} />
         <meta property="og:url" content={url} />
-        <meta property="og:image" content={`${origin}/og.png`} />
-        <meta property="og:image:width" content="1200" />
-        <meta property="og:image:height" content="630" />
-        <meta property="og:image:alt" content="eukhe.com: the page as a Neovim terminal" />
-        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:card" content="summary" />
         <link
           rel="preload"
           href={fonts[0]?.file}
@@ -268,8 +282,8 @@ function Page({
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: structured }} />
       </head>
       <body {...stylex.props(styles.body)}>
-        <main {...stylex.props(styles.main)}>
-          <Markdown source={doc.markdown} back={doc !== home} />
+        <main>
+          <Markdown source={doc.markdown} linkHome={doc !== home} shown={shown} />
         </main>
         {/* The editor: a terminal of rows x cols cells; client.ts paints Vim.frame into it. */}
         <div
@@ -283,6 +297,7 @@ function Page({
             dangerouslySetInnerHTML={{ __html: screen?.gutter ?? "" }}
             {...stylex.props(styles.gutter)}
           />
+          <div data-images="" dangerouslySetInnerHTML={{ __html: screen?.images ?? "" }} />
           <div
             data-text=""
             dangerouslySetInnerHTML={{ __html: screen?.text ?? "" }}
@@ -309,15 +324,15 @@ function Page({
   );
 }
 
-/** llms.txt: what Eukhe is, the wish, its laws, SDK and components, how to install it, then the whole page. */
+/** llms.txt: what Eukhe is, the wish, its laws, embedding and components, how to install it, then the whole page. */
 const llms = `# Eukhe
 
-> ${summary}
+> ${definition}
 
 ## What it is
 
 Eukhe is εὐχή, Greek for wish. You write the wish as rules in
-\`AGENTS.md\`, as a goal and as commands that must pass. When one of
+\`AGENTS.md\`, as a task and as commands that must pass. When one of
 those commands fails, Eukhe gives its output to the agent and runs
 another turn, until every command passes or the run reaches a limit. A
 session is an append-only log on disk, so it survives a crash and
@@ -330,8 +345,10 @@ own process.
 ## Wish
 
 - Eukhe reads \`AGENTS.md\` in the project and puts it in the system prompt.
-- \`eukhe --goal "objective"\` keeps running turns until the agent marks
-  the goal complete or \`--goal-token-budget\` tokens are used.
+- \`eukhe --auto -p "task"\` keeps running turns on the task until its
+  acceptance checks all pass, it reaches a limit (\`--budget-tokens\` and the
+  other \`--budget-*\` flags), or its turns stop making progress; the run then
+  ends at its next final answer.
 - \`eukhe --autonomous --autonomous-gate "cargo test"\` runs \`cargo test\`
   after each turn and runs another turn while it fails, up to the
   limits that \`eukhe --help\` lists.
@@ -345,25 +362,32 @@ law is a theorem that the core, the part of Eukhe written in
 them. The proofs cover the Bend core and say nothing about what the
 model writes.
 
-## SDK
+## Embed
 
-[\`eukhe-sdk\`](${origin}/crates/eukhe-sdk/) is a Rust crate that runs
-sessions inside your process.
-[\`eukhe-client\`](${origin}/crates/eukhe-client/) is a Rust crate that
-connects to the Eukhe daemon over its socket. A program in any language
-starts \`eukhe --mode <json|rpc|acp>\` and talks to it over stdio. The
-crates are not on crates.io. Their API may change with any release.
+The npm package \`eukhe\` runs Eukhe from TypeScript:
+\`npm install eukhe && npx eukhe install\`, then \`Eukhe.start({ cwd })\`,
+\`eukhe.session()\` and \`session.prompt(text)\`, which streams typed events
+and ends with the run report
+([crates/eukhe-sdk/ts/README.md](https://github.com/gildrb/eukhe/blob/main/crates/eukhe-sdk/ts/README.md)). Any other
+language starts \`eukhe acp\`, an Agent Client Protocol agent on stdio; the
+budget, checks, undo, diff and irreversible effects are \`_eukhe/\` methods
+([crates/eukhe-sdk/README.md](https://github.com/gildrb/eukhe/blob/main/crates/eukhe-sdk/README.md#acp), JSON Schema
+[crates/eukhe-sdk/acp.schema.json](https://github.com/gildrb/eukhe/blob/main/crates/eukhe-sdk/acp.schema.json)).
+A machine needs one model provider login: \`eukhe login <provider>\`.
+[crates/eukhe-sdk/README.md](https://github.com/gildrb/eukhe/blob/main/crates/eukhe-sdk/README.md) holds the T3 Code
+settings and an agent skill for adding Eukhe to a project
+(\`npx skills add https://github.com/gildrb/eukhe/tree/main/crates/eukhe-sdk\`).
 
 ## Components
 
 [Durable](${origin}/spec/durable/), [Memory](${origin}/spec/memory/),
 [RLM](${origin}/spec/rlm/) and [Autoresearch](${origin}/spec/autoresearch/)
-have requirements and laws. Loop, the code behind \`--autonomous\` and
-\`--goal\`, has no requirements, spec files or laws yet.
+have requirements and laws. Loop, the code behind \`--auto\`, has no
+requirements, spec files or laws yet.
 
-Planned and not built: hard budgets, verified completion, exactly-once
-effects, capability security, replayable record, orchestration at
-scale, stable SDK contract.
+Planned and not built: confinement of the programs the agent runs, checks
+the agent never sees, review of the process for gaming, capability
+security, replayable record, orchestration at scale, stable SDK contract.
 
 ## Install
 
@@ -375,7 +399,7 @@ sandbox: use it in trusted repositories only.
 ## How to read this site
 
 - [Home page as Markdown](${origin}/index.md) (also \`Accept: text/markdown\` on ${origin}/):
-  Eukhe's README, with the site's header and epigraphs
+  Eukhe's README, with the site's epigraphs
 - [About](${origin}/about.md), [Contact](${origin}/contact.md), [Privacy](${origin}/privacy.md)
 - [Source](https://github.com/gildrb/eukhe), MIT license
 
@@ -401,14 +425,12 @@ function folderDoc(folder: string, paths: readonly string[]): Doc {
   );
   return {
     path: `/${folder}`,
-    title: `${folder} | Eukhe`,
+    title: `/${folder} | Eukhe`,
     description: `Eukhe's ${folder}: ${sorted.join(", ")}.`,
     markdown: [
       "EUKHE",
       folder.toUpperCase(),
       "2026",
-      "",
-      "~*~ εὐχή: a wish, a prayer ~*~",
       "",
       `# ${folder}`,
       "",
@@ -424,25 +446,33 @@ function folderDoc(folder: string, paths: readonly string[]): Doc {
  * highlights (for the screen); eukhe's files are also served as they are, at their paths, and each
  * of their folders as a page.
  */
-export function render(css: string, script: string, files: SourceFile[]): Record<string, string> {
-  // The editor's files: the home page, the other pages, then eukhe's files.
+export function render(
+  css: string,
+  script: string,
+  files: SourceFile[],
+  shown: Shown,
+): Record<string, string> {
+  // The editor's files: the home page (rendered), the other pages, then eukhe's files.
+  // Markdown shows rendered (rendered.ts): the home page, the site's pages, eukhe's Markdown files;
+  // eukhe's other files show as they are.
   const editor = [
-    { path: "index.md", text: source, plain: false, back: false },
-    ...docs.map((doc) => ({
-      path: `${doc.path.slice(1)}.md`,
-      text: doc.markdown,
-      plain: false,
-      back: true,
-    })),
-    ...files.map((file) => ({ ...file, back: false })),
-  ].map((file) => editorFile(file.path, file.text, file.plain, file.back));
+    pageFile("index.md", source, shown, textWidth, desktop, false),
+    ...[...docs, missing].map((doc) =>
+      pageFile(`${doc.path.slice(1)}.md`, doc.markdown, shown, textWidth, desktop, true),
+    ),
+    ...files.map((file) =>
+      file.path.endsWith(".md")
+        ? pageFile(file.path, file.text, shown, textWidth, desktop, false)
+        : editorFile(file.path, file.text, file.plain, false),
+    ),
+  ];
   // A page opens the editor on its own file: that file first (client.ts orders them the same way).
   const first = (path: string) => {
     const own = editor.filter((file) => file.path === path);
     return firstScreen([...own, ...editor.filter((file) => file.path !== path)]);
   };
   const html = (doc: Doc, screen: Screen | null) =>
-    `<!doctype html>\n${renderToString(<Page css={css} doc={doc} script={script} screen={screen} />)}\n`;
+    `<!doctype html>\n${renderToString(<Page css={css} doc={doc} script={script} screen={screen} shown={shown} />)}\n`;
   const pages = Object.fromEntries(
     docs.flatMap((doc) => [
       [`${doc.path.slice(1)}.html`, html(doc, first(`${doc.path.slice(1)}.md`))],
@@ -473,7 +503,9 @@ export function render(css: string, script: string, files: SourceFile[]): Record
     "index.html": html(home, first("index.md")),
     "index.md": source,
     ...pages,
-    "404.html": html(missing, null),
+    "404.html": html(missing, first("404.md")),
+    // The README at the path GitHub gives it, so a link to it can be shared.
+    "README.md": source,
     "404.md": `${notFound.trimEnd()}\n\nSee [llms.txt](${origin}/llms.txt) for what this site holds.\n`,
     "files.json": JSON.stringify(editor),
     "favicon.svg": favicon,
@@ -499,8 +531,6 @@ const styles = stylex.create({
     WebkitTextSizeAdjust: "100%",
     textRendering: "optimizeLegibility",
   },
-  /** The column's width, for the header's fitted type (`markdown.tsx`). */
-  main: { containerType: "inline-size" },
   body: {
     margin: 0,
     padding: { default: type.inset, "@media (max-width: 559px)": type.insetPhone },
@@ -543,6 +573,9 @@ const styles = stylex.create({
     width: "calc(var(--W) - var(--g) * var(--cw))",
     height: "calc(var(--H) - 2 * var(--lh))",
     overflow: "hidden",
+    // Over the images (cursorline, selection and a yank's flash cover them, as in a terminal);
+    // a click passes to the image's link under it, and to the editor (client.ts reads the cell).
+    pointerEvents: "none",
   },
   /** laststatus=3: one statusline across the window. */
   status: {

@@ -7,7 +7,8 @@
  */
 import type { EditorFile, Run } from "./markdown.tsx";
 import { type CopyAt, cells, floatRows, gutterRows, list, statusParts, textRows } from "./paint.ts";
-import Vim, { type BendList, type Buf, type Ev, type Frame, type St } from "./vim.mjs";
+import { desktop, imageStyle, imagesHtml, pageFile, textWidth } from "./rendered.ts";
+import Vim, { type BendList, type Buf, type Ev, type Frame, type Span, type St } from "./vim.mjs";
 
 /** A touch screen (a phone): no keyboard, a smaller font, the finger scrolls. */
 const touch = window.matchMedia("(pointer: coarse)").matches;
@@ -28,7 +29,7 @@ function isRun(value: unknown): value is Run {
   if (!("to" in value) || typeof value.to !== "number") return false;
   if ("href" in value && typeof value.href !== "string") return false;
   if (!("hl" in value) || typeof value.hl !== "string") return false;
-  return ["title", "muted", "heading", "link"].includes(value.hl);
+  return ["title", "muted", "heading", "link", "bold", "italic", "code"].includes(value.hl);
 }
 
 function isStrings(value: unknown): value is string[] {
@@ -42,7 +43,21 @@ function isEditorFile(value: unknown): value is EditorFile {
   if (!("lines" in value) || !isStrings(value.lines)) return false;
   if (!("runs" in value) || !Array.isArray(value.runs)) return false;
   if (!value.runs.every((row: unknown) => Array.isArray(row) && row.every(isRun))) return false;
-  return "copy" in value && (value.copy === null || typeof value.copy === "number");
+  if (!("images" in value) || !Array.isArray(value.images)) return false;
+  if (!("page" in value) || (value.page !== null && typeof value.page !== "object")) return false;
+  return (
+    "copies" in value &&
+    Array.isArray(value.copies) &&
+    value.copies.every(
+      (copy: unknown) =>
+        typeof copy === "object" &&
+        copy !== null &&
+        "line" in copy &&
+        typeof copy.line === "number" &&
+        "text" in copy &&
+        typeof copy.text === "string",
+    )
+  );
 }
 
 async function loadFiles(text: Promise<string>): Promise<EditorFile[]> {
@@ -121,8 +136,8 @@ function keyName(event: KeyboardEvent): string | null {
 let state: St | null = null;
 let files: EditorFile[] = [];
 
-/** Virtual text on screen this frame (`[copy]`), for clicks. */
-let copyAt: CopyAt | null = null;
+/** Virtual text on screen this frame (each `[copy]`), for clicks. */
+let copyAt: CopyAt[] = [];
 
 /**
  * Rows of cells in an element, one <div> each: a row is written only when its HTML changed, so a
@@ -177,8 +192,9 @@ function linkAt(row: number, col: number): { url: string; col: number } | null {
   const cps = cells(line);
   const c = shown.left + col - g;
   const run = (file.runs[l] ?? []).find((r) => {
-    if (r.hl !== "link") return false;
-    const labelled = cps[r.from - 1] === "(" && cps[r.from - 2] === "]";
+    // A link, or a run that links without its look (a drawing that links: rendered.ts).
+    if (r.hl !== "link" && r.href === undefined) return false;
+    const labelled = r.hl === "link" && cps[r.from - 1] === "(" && cps[r.from - 2] === "]";
     const from = labelled ? cps.lastIndexOf("[", r.from - 3) : r.from;
     return from >= 0 && from <= c && c <= (labelled ? r.to : r.to - 1);
   });
@@ -194,12 +210,61 @@ function setVar(name: string, value: number) {
   if (term.style.getPropertyValue(name) !== next) term.style.setProperty(name, next);
 }
 
+/** The tab's title: the file or folder on screen, as the page's own title names it. */
+function tabTitle(tgt: Frame["tgt"]): string {
+  switch (tgt.$) {
+    case "File":
+      return `${files[tgt.i]?.path ?? ""} | Eukhe`;
+    case "Dir":
+      return `/${tgt.path} | Eukhe`;
+    default: {
+      const _: never = tgt;
+      throw new Error(`unknown target ${JSON.stringify(_)}`);
+    }
+  }
+}
+
+/** The cells left of the page's text: the sign column (2), the number column (4), one to spare. */
+const pageGutter = 7;
+
+/**
+ * The images over the text rows (rendered.ts): made once per set of images, then only moved, so a
+ * GIF keeps playing while the text scrolls; one outside the window is not drawn.
+ */
+const imageLayer = element("[data-images]", HTMLElement);
+
+function paintImages(frame: Frame) {
+  const file = frame.tgt.$ === "File" ? files[frame.tgt.i] : undefined;
+  const page = file?.page ?? null;
+  imageLayer.hidden = file === undefined || page === null || frame.float.$ === "Some";
+  if (file === undefined || page === null) return;
+  const links = [...imageLayer.children];
+  const same =
+    links.length === file.images.length &&
+    file.images.every((img, k) => links[k]?.querySelector("img")?.getAttribute("src") === img.src);
+  if (!same) imageLayer.innerHTML = imagesHtml(file.images, frame.top, frame.left, page.width);
+  const h = size().rows - 2;
+  file.images.forEach((img, k) => {
+    const link = imageLayer.children[k];
+    if (!(link instanceof HTMLElement)) return;
+    const seen = img.line - frame.top < h && img.line + img.rows > frame.top;
+    link.style.cssText = imageStyle(img, frame.top, frame.left, page.width);
+    link.style.display = seen ? "" : "none";
+  });
+}
+
 function paint(frame: Frame) {
   shown = frame;
   const { rows } = size();
   const tgt = frame.tgt;
   const dir = tgt.$ === "Dir" && state !== null ? list(Vim["Vim.lines"](state)) : [];
-  const painted = textRows(frame, tgt.$ === "File" ? files[tgt.i] : undefined, dir, rows - 2);
+  const painted = textRows(
+    frame,
+    tgt.$ === "File" ? files[tgt.i] : undefined,
+    dir,
+    rows - 2,
+    flash,
+  );
   copyAt = painted.copyAt;
   setVar("--g", frame.gutter);
   show(gutter, gutterRows(frame));
@@ -211,6 +276,8 @@ function paint(frame: Frame) {
   if (statusLeft.textContent !== left) statusLeft.textContent = left;
   if (statusRight.textContent !== right) statusRight.textContent = right;
   if (cmdline.textContent !== frame.cmd) cmdline.textContent = frame.cmd;
+  const title = tabTitle(tgt);
+  if (document.title !== title) document.title = title;
   show(floatLayer, floatRows(frame));
   if (frame.float.$ === "Some") {
     const float = frame.float.value;
@@ -219,6 +286,7 @@ function paint(frame: Frame) {
     setVar("--fw", float.width);
   }
   floatLayer.element.hidden = frame.float.$ === "None";
+  paintImages(frame);
   setVar("--crow", frame.cur.row);
   setVar("--ccol", frame.cur.col);
   setVar("--bar-start", frame.bar.row);
@@ -230,6 +298,51 @@ function paint(frame: Frame) {
 }
 
 /** Events in a row, painted once (a finger's scroll sends many). */
+/**
+ * What a yank took flashes once, as Neovim's `vim.hl.on_yank` (IncSearch, 150 ms): the selection
+ * the frame before it showed, or for yy and Y the cursor's line and the lines after it the copy
+ * holds.
+ */
+let flash: Span[] = [];
+let flashTimer: ReturnType<typeof setTimeout> | undefined;
+
+function yanked(before: Frame | null, copied: string) {
+  if (before === null) return;
+  const { cols } = size();
+  const sel = list(before.sel);
+  const lines = Math.max(1, copied.split("\n").length - 1);
+  flashed(
+    sel.length > 0
+      ? sel
+      : Array.from({ length: lines }, (_, k): Span => ({
+          $: "Span",
+          row: before.cur.row + k,
+          col: before.left,
+          len: cols,
+        })),
+  );
+}
+
+/** A `[copy]` click flashes the command it copied, as a yank does. */
+function copiedAt(copy: CopyAt) {
+  if (shown === null || shown.tgt.$ !== "File") return;
+  const line = files[shown.tgt.i]?.lines[copy.at] ?? "";
+  const from = line.indexOf(copy.text);
+  if (from < 0) return;
+  const col = Array.from(line.slice(0, from)).length;
+  flashed([{ $: "Span", row: copy.at - shown.top, col, len: Array.from(copy.text).length }]);
+  paint(shown);
+}
+
+function flashed(spans: Span[]) {
+  flash = spans;
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => {
+    flash = [];
+    if (shown !== null) paint(shown);
+  }, 150);
+}
+
 function steps(events: readonly Ev[]) {
   if (state === null || events.length === 0) return;
   for (const event of events) state = Vim["Vim.step"](state, event).st;
@@ -244,6 +357,7 @@ function counted(n: number, keys: readonly string[]): Ev[] {
 
 function step(event: Ev) {
   if (state === null) return;
+  const before = shown;
   const next = Vim["Vim.step"](state, event);
   state = next.st;
   const act = next.act;
@@ -255,6 +369,7 @@ function step(event: Ev) {
       break;
     case "CopyText":
       void navigator.clipboard.writeText(act.text);
+      yanked(before, act.text);
       break;
     default: {
       const _: never = act;
@@ -262,6 +377,11 @@ function step(event: Ev) {
     }
   }
   paint(Vim["Vim.frame"](state));
+}
+
+/** The `[copy]` at screen cell (row, col), if one is there. */
+function copyUnder(row: number, col: number): CopyAt | undefined {
+  return copyAt.find((copy) => row === copy.row && col >= copy.from && col < copy.to);
 }
 
 /** Where the window is: a file or an Oil folder. A tap that changes it is a step in history. */
@@ -284,8 +404,10 @@ let depth = 0;
  * the statusline it opens the folder above (-).
  */
 function tap(row: number, col: number, finger: boolean) {
-  if (copyAt !== null && row === copyAt.row && col >= copyAt.from && col < copyAt.to) {
-    void navigator.clipboard.writeText(copyAt.text);
+  const copy = copyUnder(row, col);
+  if (copy !== undefined) {
+    void navigator.clipboard.writeText(copy.text);
+    copiedAt(copy);
     return;
   }
   const from = place(shown);
@@ -323,9 +445,8 @@ function cellAt(event: MouseEvent): { row: number; col: number } {
 }
 
 /**
- * The editor starts at the first input (a key, a click, a touch, the wheel), not at load: the page
- * already shows its first screen, and loading stays free of long tasks. The files come over the
- * network meanwhile; inputs made while the editor starts run once it has.
+ * The editor starts as soon as its files arrive, after the page shows its first screen (painted at
+ * build), so the first scroll waits for nothing; inputs made before it has started run once it has.
  */
 let filesText: Promise<string> | null = null;
 let booting: Promise<void> | null = null;
@@ -340,6 +461,16 @@ async function start() {
     ...all.filter((file) => file.path !== page),
   ];
   const { rows, cols } = size();
+  // The home page, rendered again where the screen is narrower than the build's width, or its
+  // cells another size (a phone): its text then wraps at the screen, its images keep their aspect.
+  files = files.map((file) => {
+    const home = file.page;
+    if (home === null) return file;
+    const w = Math.min(textWidth, cols - pageGutter);
+    return w === home.width && cw === desktop.cw && lh === desktop.lh
+      ? file
+      : pageFile(file.path, home.source, home.shown, w, { cw, lh }, home.linkHome);
+  });
   const bufs = cons(
     files.map((file): Buf => ({ $: "Buf", path: file.path, lines: cons(file.lines) })),
   );
@@ -380,9 +511,19 @@ function listen() {
     if (!response.ok) throw new Error(`/files.json: ${response.status}`);
     return response.text();
   });
-  // Until the first input reads it; a failure is reported then.
-  filesText.catch(() => undefined);
+  // A failure is reported by the first input that waits for the editor.
+  filesText.then(
+    () => ready(() => undefined),
+    () => undefined,
+  );
   document.addEventListener("keydown", (event) => {
+    // Cmd-C or Ctrl-C with text selected copies it, as anywhere else (y in visual mode).
+    const selected = shown !== null && shown.sel.$ === "Con";
+    if ((event.metaKey || event.ctrlKey) && event.key === "c" && selected) {
+      event.preventDefault();
+      ready(() => step({ $: "EvKey", name: "y" }));
+      return;
+    }
     const name = keyName(event);
     if (name === null) return;
     event.preventDefault();
@@ -396,21 +537,33 @@ function listen() {
       else step({ $: "EvKey", name });
     });
   });
+  // A press puts the cursor there; dragging with the button down selects from it (visual mode).
+  let pressed: { row: number; col: number } | null = null;
   term.addEventListener("mousedown", (event) => {
     if (event.button !== 0) return;
     event.preventDefault();
     const { row, col } = cellAt(event);
+    pressed = { row, col };
     ready(() => tap(row, col, false));
+  });
+  window.addEventListener("mouseup", () => {
+    pressed = null;
   });
   term.addEventListener("mouseleave", () => {
     mouse = null;
   });
   term.addEventListener("mousemove", (event) => {
     const { row, col } = cellAt(event);
+    if (
+      pressed !== null &&
+      (event.buttons & 1) === 1 &&
+      (row !== pressed.row || col !== pressed.col)
+    ) {
+      pressed = { row, col };
+      ready(() => step({ $: "EvDrag", row, col }));
+    }
     mouse = { row, col };
-    const over =
-      linkAt(row, col) !== null ||
-      (copyAt !== null && row === copyAt.row && col >= copyAt.from && col < copyAt.to);
+    const over = linkAt(row, col) !== null || copyUnder(row, col) !== undefined;
     term.style.cursor = over ? "pointer" : "";
   });
   // A notch is about 100px of wheel; a trackpad sends many small moves, summed until they make one.

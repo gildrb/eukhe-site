@@ -7,12 +7,10 @@
 import Base
 import ../../vim/types.bend as T
 import ../../vim/vim.bend as V
+import ../../vim/st.bend as S
 
 # Terms
 # -----
-
-def Spec.install() -> String:
-  "curl -fsSL https://eukhe.com/install | sh"
 
 def Spec.min(+a: Nat, +b: Nat) -> Nat:
   Bool.pick(Nat, Nat.is_le(a, b), a, b)
@@ -69,6 +67,8 @@ def Spec.rows.go(evs: List<&2, T.Ev>, r: Nat) -> Nat:
       Spec.rows.go(t, r)
     case Con{T.EvClick{row, col}, t}:
       Spec.rows.go(t, r)
+    case Con{T.EvDrag{row, col}, t}:
+      Spec.rows.go(t, r)
     case Con{T.EvWheel{down, notches}, t}:
       Spec.rows.go(t, r)
 
@@ -81,6 +81,8 @@ def Spec.cols.go(evs: List<&2, T.Ev>, c: Nat) -> Nat:
     case Con{T.EvKey{name}, t}:
       Spec.cols.go(t, c)
     case Con{T.EvClick{row, col}, t}:
+      Spec.cols.go(t, c)
+    case Con{T.EvDrag{row, col}, t}:
       Spec.cols.go(t, c)
     case Con{T.EvWheel{down, notches}, t}:
       Spec.cols.go(t, c)
@@ -245,63 +247,68 @@ def Spec.parent(d: String) -> String:
 
 def F.tgt(f: T.Frame) -> T.Tgt:
   match f:
-    case T.Frame{tgt, top, left, gutter, nums, cur, char, cmd, hits, bar, cl, status, float}:
+    case T.Frame{tgt, top, left, gutter, nums, cur, char, cmd, hits, bar, cl, status, float, sel}:
       tgt
 
 def F.top(f: T.Frame) -> Nat:
   match f:
-    case T.Frame{tgt, top, left, gutter, nums, cur, char, cmd, hits, bar, cl, status, float}:
+    case T.Frame{tgt, top, left, gutter, nums, cur, char, cmd, hits, bar, cl, status, float, sel}:
       top
 
 def F.left(f: T.Frame) -> Nat:
   match f:
-    case T.Frame{tgt, top, left, gutter, nums, cur, char, cmd, hits, bar, cl, status, float}:
+    case T.Frame{tgt, top, left, gutter, nums, cur, char, cmd, hits, bar, cl, status, float, sel}:
       left
 
 def F.gutter(f: T.Frame) -> Nat:
   match f:
-    case T.Frame{tgt, top, left, gutter, nums, cur, char, cmd, hits, bar, cl, status, float}:
+    case T.Frame{tgt, top, left, gutter, nums, cur, char, cmd, hits, bar, cl, status, float, sel}:
       gutter
 
 def F.nums(f: T.Frame) -> List<&2, String>:
   match f:
-    case T.Frame{tgt, top, left, gutter, nums, cur, char, cmd, hits, bar, cl, status, float}:
+    case T.Frame{tgt, top, left, gutter, nums, cur, char, cmd, hits, bar, cl, status, float, sel}:
       nums
 
 def F.row(f: T.Frame) -> Nat:
   match f:
-    case T.Frame{tgt, top, left, gutter, nums, T.Cell{row, col}, char, cmd, hits, bar, cl, status, float}:
+    case T.Frame{tgt, top, left, gutter, nums, T.Cell{row, col}, char, cmd, hits, bar, cl, status, float, sel}:
       row
 
 def F.col(f: T.Frame) -> Nat:
   match f:
-    case T.Frame{tgt, top, left, gutter, nums, T.Cell{row, col}, char, cmd, hits, bar, cl, status, float}:
+    case T.Frame{tgt, top, left, gutter, nums, T.Cell{row, col}, char, cmd, hits, bar, cl, status, float, sel}:
       col
 
 def F.char(f: T.Frame) -> String:
   match f:
-    case T.Frame{tgt, top, left, gutter, nums, cur, char, cmd, hits, bar, cl, status, float}:
+    case T.Frame{tgt, top, left, gutter, nums, cur, char, cmd, hits, bar, cl, status, float, sel}:
       char
 
 def F.hits(f: T.Frame) -> List<&2, T.Span>:
   match f:
-    case T.Frame{tgt, top, left, gutter, nums, cur, char, cmd, hits, bar, cl, status, float}:
+    case T.Frame{tgt, top, left, gutter, nums, cur, char, cmd, hits, bar, cl, status, float, sel}:
       hits
 
 def F.bar(f: T.Frame) -> T.Span:
   match f:
-    case T.Frame{tgt, top, left, gutter, nums, cur, char, cmd, hits, bar, cl, status, float}:
+    case T.Frame{tgt, top, left, gutter, nums, cur, char, cmd, hits, bar, cl, status, float, sel}:
       bar
 
 def F.status(f: T.Frame) -> String:
   match f:
-    case T.Frame{tgt, top, left, gutter, nums, cur, char, cmd, hits, bar, cl, status, float}:
+    case T.Frame{tgt, top, left, gutter, nums, cur, char, cmd, hits, bar, cl, status, float, sel}:
       status
 
 def F.float(f: T.Frame) -> Maybe<&2, T.Float>:
   match f:
-    case T.Frame{tgt, top, left, gutter, nums, cur, char, cmd, hits, bar, cl, status, float}:
+    case T.Frame{tgt, top, left, gutter, nums, cur, char, cmd, hits, bar, cl, status, float, sel}:
       float
+
+def F.sel(f: T.Frame) -> List<&2, T.Span>:
+  match f:
+    case T.Frame{tgt, top, left, gutter, nums, cur, char, cmd, hits, bar, cl, status, float, sel}:
+      sel
 
 def Spec.is_file(t: T.Tgt) -> Bool:
   match t:
@@ -462,13 +469,31 @@ def Spec.normal(fs: List<&2, T.Buf>, rows: Nat, cols: Nat, evs: List<&2, T.Ev>) 
 def Spec.press(+s: T.St, name: String) -> T.St:
   Spec.after(V.Vim.step(s, Spec.key(name)))
 
+# a file's text: its lines, each ended by a line break
+def Spec.text(ls: List<&2, String>) -> String:
+  match ls:
+    case Nil{}:
+      ""
+    case Con{h, t}:
+      String.append(h, String.append("\n", Spec.text(t)))
+
+# u is a run of the text of a file of fs (its lines as the editor holds
+# them: at least one), or of the one empty line the window shows past the
+# last file (A2)
+def Spec.in_text(+u: String, fs: List<&2, T.Buf>) -> Bool:
+  match fs:
+    case Nil{}:
+      Spec.within(u, Spec.text([""]))
+    case Con{T.Buf{path, lines}, t}:
+      Bool.or(Spec.within(u, Spec.text(Spec.some(lines))), Spec.in_text(u, t))
+
 # what the host does is asked for by the files (R7)
 def Spec.honest(fs: List<&2, T.Buf>, a: T.Act) -> Bool:
   match a:
     case T.Nothing{}:
       True{}
     case T.CopyText{text}:
-      String.eq(text, Spec.install())
+      Spec.in_text(text, fs)
     case T.OpenUrl{url}:
       Spec.in_files(url, fs)
 
@@ -491,6 +516,37 @@ def Claim.gg(+s: T.St) -> Bool:
 
 def Claim.G(+fs: List<&2, T.Buf>, +s: T.St) -> Bool:
   Spec.moved_line(s, Spec.press(s, "G"), Spec.last(Spec.count(Spec.lines(fs, s))))
+
+# a step's act copies exactly t
+def Spec.copies(a: T.Act, +t: String) -> Bool:
+  match a:
+    case T.Nothing{}:
+      False{}
+    case T.CopyText{x}:
+      String.eq(x, t)
+    case T.OpenUrl{u}:
+      False{}
+
+# Y on a file copies the cursor's line and its line break (R9)
+def Claim.yank_line(+fs: List<&2, T.Buf>, +s: T.St) -> Bool:
+  +f = V.Vim.frame(s)
+  Spec.implies(Spec.is_file(F.tgt(f)), Spec.copies(Spec.act(V.Vim.step(s, Spec.key("Y"))), String.append(Spec.line(Spec.lines(fs, s), Spec.at_line(f)), "\n")))
+
+# the character at column c of s, as a string; past its end, nothing
+def Spec.char_at(s: String, c: Nat) -> String:
+  match s c:
+    case SNil{} _:
+      ""
+    case SCon{h, t} 0n:
+      SCon{h, SNil{}}
+    case SCon{h, t} 1n+p:
+      Spec.char_at(t, p)
+
+# v then y on a file copies the character under the cursor; on an empty
+# line, its line break (R9)
+def Claim.yank_char(+fs: List<&2, T.Buf>, +s: T.St) -> Bool:
+  +f = V.Vim.frame(s)
+  Spec.implies(Spec.is_file(F.tgt(f)), Spec.copies(Spec.act(V.Vim.step(Spec.press(s, "v"), Spec.key("y"))), Spec.char_at(String.append(Spec.line(Spec.lines(fs, s), Spec.at_line(f)), "\n"), Spec.at_col(f))))
 
 def Claim.zero(+s: T.St) -> Bool:
   Spec.moved(s, Spec.press(s, "0"), Spec.at_line(V.Vim.frame(s)), 0n)
@@ -569,12 +625,12 @@ def Claim.vcol_G(fs: List<&2, T.Buf>, +s: T.St) -> Bool:
 
 def F.cmd(f: T.Frame) -> String:
   match f:
-    case T.Frame{tgt, top, left, gutter, nums, cur, char, cmd, hits, bar, cl, status, float}:
+    case T.Frame{tgt, top, left, gutter, nums, cur, char, cmd, hits, bar, cl, status, float, sel}:
       cmd
 
 def F.cl(f: T.Frame) -> Bool:
   match f:
-    case T.Frame{tgt, top, left, gutter, nums, cur, char, cmd, hits, bar, cl, status, float}:
+    case T.Frame{tgt, top, left, gutter, nums, cur, char, cmd, hits, bar, cl, status, float, sel}:
       cl
 
 def Spec.is_none(m: Maybe<&2, T.Float>) -> Bool:
@@ -756,3 +812,114 @@ def Claim.j_view(fs: List<&2, T.Buf>, +s: T.St, +rows: Nat) -> Bool:
   +need = Nat.add(l, Spec.min(so, Nat.sub(last, l)))
   +bottom = Nat.add(F.top(a), Nat.sub(h, 1n))
   Nat.is_eq(F.top(b), Bool.pick(Nat, Nat.is_le(need, bottom), F.top(a), Nat.sub(need, Nat.sub(h, 1n))))
+
+# Neovim's names of visual mode on the command line ('showmode')
+def Spec.vis_name(k: T.Vis) -> String:
+  match k:
+    case T.VChars{}:
+      "-- VISUAL --"
+    case T.VLines{}:
+      "-- VISUAL LINE --"
+
+# in visual mode, on a screen at least 17 columns wide, the command line
+# names the mode (R10)
+def Claim.vis_label.at(m: T.Mode, +s: T.St) -> Bool:
+  match m:
+    case T.Normal{}:
+      True{}
+    case T.Typing{kind, text}:
+      True{}
+    case T.Picking{kind, q, its, n, sel, top, pv, levels}:
+      True{}
+    case T.Visual{k, start}:
+      Spec.implies(Nat.is_le(17n, S.St.cols(s)), String.eq(F.cmd(V.Vim.frame(s)), Spec.vis_name(k)))
+
+def Claim.vis_label(+s: T.St) -> Bool:
+  Claim.vis_label.at(S.St.mode(s), s)
+
+# nothing selected
+def Spec.no_sel(ls: List<&2, T.Span>) -> Bool:
+  match ls:
+    case Nil{}:
+      True{}
+    case Con{h, t}:
+      False{}
+
+# v then v on a file: normal mode again, nothing selected (R10)
+def Claim.v_v(+s: T.St) -> Bool:
+  Spec.implies(Spec.is_file(F.tgt(V.Vim.frame(s))), Spec.no_sel(F.sel(V.Vim.frame(Spec.press(Spec.press(s, "v"), "v")))))
+
+# V then v on a file: visual mode by characters (R10)
+def Claim.V_v(+s: T.St) -> Bool:
+  Spec.implies(Bool.and(Spec.is_file(F.tgt(V.Vim.frame(s))), Nat.is_le(17n, S.St.cols(s))), String.eq(F.cmd(V.Vim.frame(Spec.press(Spec.press(s, "V"), "v"))), "-- VISUAL --"))
+
+# v then - on a file: Oil shows the file's folder and visual mode is over,
+# nothing selected (R10)
+def Claim.v_minus(+s: T.St) -> Bool:
+  Spec.implies(Spec.is_file(F.tgt(V.Vim.frame(s))), Spec.no_sel(F.sel(V.Vim.frame(Spec.press(Spec.press(s, "v"), "-")))))
+
+# v then V on a file: visual mode by lines (R10)
+def Claim.v_V(+s: T.St) -> Bool:
+  Spec.implies(Bool.and(Spec.is_file(F.tgt(V.Vim.frame(s))), Nat.is_le(17n, S.St.cols(s))), String.eq(F.cmd(V.Vim.frame(Spec.press(Spec.press(s, "v"), "V"))), "-- VISUAL LINE --"))
+
+# V then V on a file: normal mode again, nothing selected (R10)
+def Claim.V_V(+s: T.St) -> Bool:
+  Spec.implies(Spec.is_file(F.tgt(V.Vim.frame(s))), Spec.no_sel(F.sel(V.Vim.frame(Spec.press(Spec.press(s, "V"), "V")))))
+
+# v then j on a file: still visual mode (a motion keeps it) (R10)
+def Claim.v_j(+s: T.St) -> Bool:
+  Spec.implies(Bool.and(Spec.is_file(F.tgt(V.Vim.frame(s))), Nat.is_le(17n, S.St.cols(s))), String.eq(F.cmd(V.Vim.frame(Spec.press(Spec.press(s, "v"), "j"))), "-- VISUAL --"))
+
+# a cell of runs: on row r, at column c of one of them
+def Spec.in_runs(ls: List<&2, T.Span>, +r: Nat, +c: Nat) -> Bool:
+  match ls:
+    case Nil{}:
+      False{}
+    case Con{T.Span{row, +col, len}, t}:
+      Bool.or(Bool.and(Nat.is_eq(row, r), Bool.and(Nat.is_le(col, c), Nat.is_lt(c, Nat.add(col, len)))), Spec.in_runs(t, r, c))
+
+# p comes no later than q in the text
+def Spec.before(p: T.Pos, q: T.Pos) -> Bool:
+  match p q:
+    case T.Pos{+l1, c1} T.Pos{+l2, c2}:
+      Bool.or(Nat.is_lt(l1, l2), Bool.and(Nat.is_eq(l1, l2), Nat.is_le(c1, c2)))
+
+# (l, x) lies between p and q (p first): with v, every character from p's
+# to q's; with V, every column of the lines from p's to q's
+def Spec.between(k: T.Vis, +p: T.Pos, +q: T.Pos, +l: Nat, +x: Nat) -> Bool:
+  match k:
+    case T.VChars{}:
+      Bool.and(Spec.before(p, T.Pos{l, x}), Spec.before(T.Pos{l, x}, q))
+    case T.VLines{}:
+      Bool.and(Spec.before(T.Pos{S.Pos.line(p), 0n}, T.Pos{l, 0n}), Spec.before(T.Pos{l, 0n}, T.Pos{S.Pos.line(q), 0n}))
+
+# column x of line l, n characters long, is in a selection of kind k
+# between a and b, either way round; an empty line shows one cell
+def Spec.picked(+k: T.Vis, +a: T.Pos, +b: T.Pos, +l: Nat, +x: Nat, +n: Nat) -> Bool:
+  +first = Spec.before(a, b)
+  Bool.and(Nat.is_lt(x, Spec.max(n, 1n)), Spec.between(k, Bool.pick(T.Pos, first, a, b), Bool.pick(T.Pos, first, b, a), l, x))
+
+# p and q agree
+def Spec.iff(+p: Bool, +q: Bool) -> Bool:
+  Bool.or(Bool.and(p, q), Bool.and(Bool.not(p), Bool.not(q)))
+
+# in visual mode, a cell of text row r (column x of its line) is shown
+# selected exactly when it is picked: the line is one of the text's, and
+# the column is in the selection between where it started and the cursor
+# (R10)
+def Claim.sel_cells.at(m: T.Mode, +s: T.St, +r: Nat, +x: Nat) -> Bool:
+  match m:
+    case T.Normal{}:
+      True{}
+    case T.Typing{kind, text}:
+      True{}
+    case T.Picking{kind, q, its, n, sel, top, pv, levels}:
+      True{}
+    case T.Visual{+k, +a}:
+      +f = V.Vim.frame(s)
+      +ls = V.Vim.lines(s)
+      +l = Nat.add(r, F.top(f))
+      Spec.implies(Nat.is_lt(r, Nat.sub(S.St.rows(s), 2n)), Spec.iff(Spec.in_runs(F.sel(f), r, x), Bool.and(Nat.is_lt(l, Spec.count(ls)), Spec.picked(k, a, T.Pos{Spec.at_line(f), Spec.at_col(f)}, l, x, Spec.chars(Spec.line(ls, l))))))
+
+def Claim.sel_cells(+s: T.St, +r: Nat, +x: Nat) -> Bool:
+  Claim.sel_cells.at(S.St.mode(s), s, r, x)

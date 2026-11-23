@@ -1,4 +1,4 @@
-// The JS surface of the Bend core (`npm run bend` writes vim.mjs from vim/vim.bend). Bend values
+// The JS surface of the Bend core (`vp run bend` writes vim.mjs from vim/vim.bend). Bend values
 // cross as they are: constructors as `{$: "Name", ...fields}`, `Nat` as a number, `Bool` as a
 // boolean, `String` as a string, lists as `Con`/`Nil` cells. The editor state is opaque to the host.
 
@@ -58,12 +58,15 @@ export type Frame = {
   /** The whole statusline row, exactly `cols` cells. */
   status: string;
   float: Maybe<Float>;
+  /** The visual selection's runs: screen rows, the text's columns (as the files' runs); none outside visual mode. */
+  sel: BendList<Span>;
 };
 export type Ev =
   | { $: "EvKey"; name: string }
   | { $: "EvClick"; row: number; col: number }
   | { $: "EvWheel"; down: boolean; notches: number }
-  | { $: "EvSize"; rows: number; cols: number };
+  | { $: "EvSize"; rows: number; cols: number }
+  | { $: "EvDrag"; row: number; col: number };
 export type Act =
   | { $: "Nothing" }
   | { $: "OpenUrl"; url: string }
