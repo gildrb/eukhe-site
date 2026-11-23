@@ -374,8 +374,8 @@ budget, checks, undo, diff and irreversible effects are \`_eukhe/\` methods
 ([crates/eukhe-sdk/README.md](https://github.com/gildrb/eukhe/blob/main/crates/eukhe-sdk/README.md#acp), JSON Schema
 [crates/eukhe-sdk/acp.schema.json](https://github.com/gildrb/eukhe/blob/main/crates/eukhe-sdk/acp.schema.json)).
 A machine needs one model provider login: \`eukhe login <provider>\`.
-[crates/eukhe-sdk/README.md](https://github.com/gildrb/eukhe/blob/main/crates/eukhe-sdk/README.md) holds the T3 Code
-settings and an agent skill for adding Eukhe to a project
+[crates/eukhe-sdk/README.md](https://github.com/gildrb/eukhe/blob/main/crates/eukhe-sdk/README.md) is the SDK
+guide and holds an agent skill for adding Eukhe to a project
 (\`npx skills add https://github.com/gildrb/eukhe/tree/main/crates/eukhe-sdk\`).
 
 ## Components
