@@ -223,24 +223,30 @@ function toBlocks(entries: readonly Entry[]): Block[] {
   return out;
 }
 
-/** The commands of each fenced block, trailing `# comments` dropped, keyed by its opening fence. */
-function fences(entries: readonly Entry[]): Map<number, { n: number; command: string }[]> {
-  const blocks = new Map<number, { n: number; command: string }[]>();
-  let open: { n: number; code: { n: number; command: string }[] } | null = null;
+/** Each fenced block's language and lines, keyed by its opening fence. */
+function fences(entries: readonly Entry[]): Map<number, Fenced> {
+  const blocks = new Map<number, Fenced>();
+  let open: { n: number; block: Fenced } | null = null;
   for (const entry of entries) {
     if (entry.line.$ === "Fence") {
-      if (open === null) open = { n: entry.n, code: [] };
+      if (open === null)
+        open = { n: entry.n, block: { lang: fenceLang(entry.line.text), code: [] } };
       else {
-        blocks.set(open.n, open.code);
+        blocks.set(open.n, open.block);
         open = null;
       }
     } else if (open !== null && entry.line.$ === "Code")
-      open.code.push({
-        n: entry.n,
-        command: entry.line.text.replace(commentPattern, "").trimEnd(),
-      });
+      open.block.code.push({ n: entry.n, text: entry.line.text });
   }
   return blocks;
+}
+
+/** A fenced block: its language (`""` untagged) and its lines with their line numbers. */
+type Fenced = { lang: string; code: { n: number; text: string }[] };
+
+/** The language after an opening fence. */
+export function fenceLang(fence: string): string {
+  return fence.slice(3).trim();
 }
 
 /**
@@ -305,15 +311,16 @@ function body(entries: readonly Entry[], shown: Shown): ComponentChildren[] {
           entry.line.$ === "Raw" ||
           entry.line.$ === "Art";
         const text = "text" in entry.line ? entry.line.text : "";
-        const commands = copied((fenced.get(entry.n) ?? []).map((c) => c.command))?.text ?? "";
+        const fence = fenced.get(entry.n);
+        const pick = fence === undefined ? null : copiedFence(fence);
         return (
           <span {...greek(text)} {...stylex.props(styles.row, code && styles.hang)}>
             {content(entry.line)}
-            {commands !== "" ? (
+            {pick !== null ? (
               <button
                 type="button"
-                data-copy={commands}
-                aria-label={`Copy ${commands}`}
+                data-copy={pick.text}
+                aria-label={copyLabel(pick)}
                 {...stylex.props(styles.copy)}
               >
                 [copy]
@@ -425,24 +432,71 @@ function lineRuns(item: Line): Run[] {
   }
 }
 
-/** A code block's `[copy]`: after its opening line (0-based), its commands, one a line. */
+/** A code block's `[copy]`: after its opening line (0-based), the first line it copies, its text. */
 export type Copy = { line: number; at: number; text: string };
 
+/** Languages whose blocks hold commands a reader runs one at a time; `""` is an untagged block. */
+const shells: ReadonlySet<string> = new Set(["", "sh", "bash", "shell", "console", "zsh", "nu"]);
+
 /**
- * What a block's `[copy]` copies: its first command that is not a `cd` (the reader's own folder),
- * so the install block gives the install command and the use block `eukhe`; its index in `commands`.
+ * What a block's `[copy]` copies and its first line's index in the block. A shell block: its first
+ * command that is not a `cd` (the reader's own folder), so the install block gives the install
+ * command and the use block `eukhe`. Any other block: all of its code.
  */
-export function copied(commands: readonly string[]): { index: number; text: string } | null {
-  const index = commands.findIndex((c) => c !== "" && !/^cd(\s|$)/.test(c));
-  const text = commands[index];
-  return text === undefined ? null : { index, text };
+export type Pick =
+  | { $: "Command"; index: number; text: string }
+  | { $: "Code"; index: number; text: string; lang: string };
+
+export function copied(lang: string, lines: readonly string[]): Pick | null {
+  return shells.has(lang) ? firstCommand(lines) : wholeCode(lang, lines);
 }
 
-/** Each code block that holds a command: its `[copy]`. */
+function copiedFence(fence: Fenced): Pick | null {
+  return copied(
+    fence.lang,
+    fence.code.map((c) => c.text),
+  );
+}
+
+function firstCommand(lines: readonly string[]): Pick | null {
+  const commands = lines.map((line) => line.replace(commentPattern, "").trimEnd());
+  const index = commands.findIndex((c) => c !== "" && !/^cd(\s|$)/.test(c));
+  const text = commands[index];
+  return text === undefined ? null : { $: "Command", index, text };
+}
+
+/** A line with something on it. */
+function filled(line: string): boolean {
+  return line.trim() !== "";
+}
+
+/** The block's lines from its first to its last filled one. */
+function wholeCode(lang: string, lines: readonly string[]): Pick | null {
+  const index = lines.findIndex(filled);
+  const end = lines.findLastIndex(filled);
+  const text = lines.slice(index, end + 1).join("\n");
+  return index < 0 ? null : { $: "Code", index, text, lang };
+}
+
+/** The `[copy]` button's accessible name. */
+function copyLabel(pick: Pick): string {
+  switch (pick.$) {
+    case "Command":
+      return `Copy ${pick.text}`;
+    case "Code":
+      return `Copy the ${pick.lang} code`;
+    default: {
+      const _: never = pick;
+      return _;
+    }
+  }
+}
+
+/** Each code block that holds something to copy: its `[copy]`. */
 function copyFences(entries: readonly Entry[]): Copy[] {
-  return [...fences(entries)].flatMap(([n, code]) => {
-    const pick = copied(code.map((c) => c.command));
-    const line = code[pick?.index ?? -1];
+  return [...fences(entries)].flatMap(([n, fence]) => {
+    const pick = copiedFence(fence);
+    const line = fence.code[pick?.index ?? -1];
     return pick === null || line === undefined
       ? []
       : [{ line: n - 1, at: line.n - 1, text: pick.text }];

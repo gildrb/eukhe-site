@@ -6,7 +6,7 @@
  * (`index.md`); this is the buffer the editor shows. Pure: the build paints it at the desktop width,
  * the browser again at its own when that is narrower.
  */
-import { type Copy, copied, type EditorFile, type Hl, type Run } from "./markdown.tsx";
+import { type Copy, copied, type EditorFile, fenceLang, type Hl, type Run } from "./markdown.tsx";
 import { escape } from "./paint.ts";
 
 /** An image in the buffer: the rows it covers from `line`, its file, its alt text and its size. */
@@ -220,13 +220,13 @@ export function render(
     if (line.startsWith("```")) {
       // The block: its language as its label (`[copy]` after it), its lines as they are, the
       // fences hidden.
-      const lang = line.slice(3).trim();
+      const lang = fenceLang(line);
       const at = lines.length;
       add({
         text: lang,
         runs: lang === "" ? [] : [{ from: 0, to: Array.from(lang).length, hl: "muted" }],
       });
-      const commands: string[] = [];
+      const codes: string[] = [];
       const rows: number[] = [];
       for (i += 1; i < md.length && !(md[i] ?? "").startsWith("```"); i += 1) {
         const code = md[i] ?? "";
@@ -245,10 +245,10 @@ export function render(
                   },
                 ],
         });
-        commands.push(code.replace(/(^|\s)#\s.*$/, "").trimEnd());
+        codes.push(code);
         rows.push(lines.length - 1);
       }
-      const pick = copied(commands);
+      const pick = copied(lang, codes);
       const row = rows[pick?.index ?? -1];
       if (pick !== null && row !== undefined) copies.push({ line: at, at: row, text: pick.text });
       continue;

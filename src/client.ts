@@ -323,14 +323,20 @@ function yanked(before: Frame | null, copied: string) {
   );
 }
 
-/** A `[copy]` click flashes the command it copied, as a yank does. */
+/** A `[copy]` click flashes what it copied, line by line, as a yank does. */
 function copiedAt(copy: CopyAt) {
   if (shown === null || shown.tgt.$ !== "File") return;
-  const line = files[shown.tgt.i]?.lines[copy.at] ?? "";
-  const from = line.indexOf(copy.text);
-  if (from < 0) return;
-  const col = Array.from(line.slice(0, from)).length;
-  flashed([{ $: "Span", row: copy.at - shown.top, col, len: Array.from(copy.text).length }]);
+  const lines = files[shown.tgt.i]?.lines ?? [];
+  const top = shown.top;
+  flashed(
+    copy.text.split("\n").flatMap((part, k): Span[] => {
+      const line = lines[copy.at + k] ?? "";
+      const from = line.indexOf(part);
+      if (from < 0) return [];
+      const col = Array.from(line.slice(0, from)).length;
+      return [{ $: "Span", row: copy.at + k - top, col, len: Array.from(part).length }];
+    }),
+  );
   paint(shown);
 }
 
